@@ -1,5 +1,5 @@
 {
-    "name": "wakaloka/edd-sl-plugin-updater",
+    "name": "rosua/edd-sl-plugin-updater",
     "type": "library",
     "description": "Easy Digital Downloads WordPress plugin updater class for Software Licenses",
     "keywords": [
@@ -14,8 +14,8 @@
             "email": "contact@easydigitaldownloads.com"
         },
         {
-            "name": "Wakaloka",
-            "email": "git@wakaloka.com"
+            "name": "Rosua",
+            "email": "id@rosua.org"
         }
     ],
     "autoload": {

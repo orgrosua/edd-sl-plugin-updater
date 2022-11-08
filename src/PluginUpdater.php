@@ -47,7 +47,7 @@ class PluginUpdater
 	}
 
 	/**
-	 * Run the plugin update process.
+	 * Run the plugin update process on the background.
 	 */
 	public function plugin_update()
 	{
@@ -67,7 +67,7 @@ class PluginUpdater
 			 * @param string the plugin ID that instantiated the PluginUpdater class.
 			 * @param Exception $th The exception.
 			 */
-			do_action('wakaloka_plugin_update_error', $this->plugin_id, $th);
+			do_action('a!edd_sl/plugin_updater:plugin_update_error', $this->plugin_id, $th);
 		}
 	}
 
