@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 namespace EDD_SL;
 
 use Exception;
@@ -49,92 +51,80 @@ class PluginUpdater
 	/**
 	 * Run the plugin update process on the background.
 	 */
-	public function plugin_update()
+	public function plugin_update(): void
 	{
-		try {
-			if ($this->is_activated()) {
-				$doing_cron = defined('DOING_CRON') && DOING_CRON;
-				if (!(current_user_can('manage_options') && $doing_cron)) {
-					if (!$this->edd_sl) {
-						$this->edd_sl = new EDD_SL_Plugin_Updater($this->payload['store_url'], $this->payload['plugin_file'], $this->payload);
-					}
+		if ($this->is_activated()) {
+			$doing_cron = defined('DOING_CRON') && DOING_CRON;
+			if (!(current_user_can('manage_options') && $doing_cron)) {
+				if (!$this->edd_sl) {
+					$this->edd_sl = new EDD_SL_Plugin_Updater($this->payload['store_url'], $this->payload['plugin_file'], $this->payload);
 				}
 			}
-		} catch (\Throwable $th) {
-			/**
-			 * Hook for handling the exception.
-			 * 
-			 * @param string the plugin ID that instantiated the PluginUpdater class.
-			 * @param Exception $th The exception.
-			 */
-			do_action('a!edd_sl/plugin_updater:plugin_update_error', $this->plugin_id, $th);
 		}
+	}
+
+	/**
+	 * Simulate the license error Event when exception is thrown.
+	 * 3rd-party plugin can listen to this event by registering an action hook to `a!edd_sl/plugin_updater:plugin_update_error`.
+	 * 
+	 * @param Exception $th The exception.
+	 */
+	private function throw_error(Exception $th): void
+	{
+		/**
+		 * Hook for handling the exception.
+		 * 
+		 * @param string the plugin ID that instantiated the PluginUpdater class.
+		 * @param Exception $th The exception.
+		 */
+		do_action('a!edd_sl/plugin_updater:plugin_update_error', $this->plugin_id, $th);
 	}
 
 	/**
 	 * Check if the plugin have licensed and activated.
 	 * 
-	 * @return mixed 
-	 * @throws Exception 
+	 * @return bool True if the plugin have licensed, activated and valid. False otherwise. 
 	 */
-	public function is_activated()
+	public function is_activated(): bool
 	{
-		$license = get_transient("{$this->plugin_id}_license_seed");
+		$license_data = get_transient("{$this->plugin_id}_license_seed");
 
-		if (!$license && empty($this->payload['license'])) {
-			if (array_key_exists('is_require_license', $this->payload) && $this->payload['is_require_license']) {
-				throw new Exception('Enter your license key to get update');
+		if (!$license_data) {
+			if (empty($this->payload['license'])) {
+				if (array_key_exists('is_require_license', $this->payload) && $this->payload['is_require_license']) {
+					$this->throw_error(new Exception('Enter your license key to get update'));
+				}
+
+				return false;
 			}
 
+			$response = $this->api_request('check_license');
+
+			if (is_wp_error($response) || 200 !== wp_remote_retrieve_response_code($response)) {
+				$this->throw_error(new Exception(is_wp_error($response) ? $response->get_error_message() : 'An Updater error occurred, please try again.'));
+
+				return false;
+			}
+
+			$license_data = json_decode(wp_remote_retrieve_body($response));
+
+			if ($license_data->success === false) {
+				if (property_exists($license_data, 'error')) {
+					$this->throw_error(new Exception($this->error_message($license_data->error)));
+				}
+
+				return false;
+			}
+
+			set_transient("{$this->plugin_id}_license_seed", $license_data, DAY_IN_SECONDS);
+		}
+
+		if ($license_data->license !== 'valid') {
+			$this->throw_error(new Exception($this->error_message($license_data->license)));
 			return false;
 		}
 
-		if ($license) {
-			if ($license->license !== 'valid') {
-				throw new Exception($this->error_message($license->license));
-			}
-
-			return $license;
-		}
-
-		$response = $this->api_request('check_license');
-
-		if (is_wp_error($response) || 200 !== wp_remote_retrieve_response_code($response)) {
-			throw new Exception(is_wp_error($response) ? $response->get_error_message() : 'An Updater error occurred, please try again.');
-		}
-
-		$license_data = json_decode(wp_remote_retrieve_body($response));
-
-		if ($license_data->success === false) {
-			if (property_exists($license_data, 'error')) {
-				throw new Exception($this->error_message($license_data->error));
-			}
-
-			return false;
-		}
-
-		set_transient("{$this->plugin_id}_license_seed", $license_data, 60 * 60 * 24);
-
-		return $license_data;
-	}
-
-	private function api_request($action)
-	{
-		return wp_remote_post($this->payload['store_url'], [
-			'timeout'   => 15,
-			'sslverify' => false,
-			'body'      => [
-				'edd_action'  => $action,
-				'license'     => $this->payload['license'] ?? '',
-				'item_id'     => $this->payload['item_id'] ?? false,
-				'version'     => $this->payload['version'] ?? false,
-				'slug'        => basename($this->payload['plugin_file'], '.php'),
-				'author'      => $this->payload['author'],
-				'url'         => site_url(),
-				'beta'        => $this->payload['beta'] ?? false,
-				'environment' => function_exists('wp_get_environment_type') ? wp_get_environment_type() : 'production',
-			]
-		]);
+		return true;
 	}
 
 	/**
@@ -166,6 +156,50 @@ class PluginUpdater
 		return $this->api_request('activate_license');
 	}
 
+	/**
+	 * Clear the license and plugin update cache.
+	 */
+	public function clear_cache(): void
+	{
+		delete_transient("{$this->plugin_id}_license_seed");
+
+		$edd_sl_cache_key = 'edd_sl_' . md5(serialize(basename($this->payload['plugin_file'], '.php') . $this->payload['license'] . $this->payload['beta']));
+		delete_option($edd_sl_cache_key);
+
+		delete_site_transient('update_plugins');
+	}
+
+	/**
+	 * Send API request to the license server.
+	 * 
+	 * @param string $action The action name.
+	 * @return array|WP_Error
+	 */
+	private function api_request($action)
+	{
+		return wp_remote_post($this->payload['store_url'], [
+			'timeout'   => 15,
+			'sslverify' => false,
+			'body'      => [
+				'edd_action'  => $action,
+				'license'     => $this->payload['license'] ?? '',
+				'item_id'     => $this->payload['item_id'] ?? false,
+				'version'     => $this->payload['version'] ?? false,
+				'slug'        => basename($this->payload['plugin_file'], '.php'),
+				'author'      => $this->payload['author'],
+				'url'         => site_url(),
+				'beta'        => $this->payload['beta'] ?? false,
+				'environment' => function_exists('wp_get_environment_type') ? wp_get_environment_type() : 'production',
+			]
+		]);
+	}
+
+	/**
+	 * Get the error message from the error code.
+	 * 
+	 * @param string $msgcode The error code.
+	 * @return string The error message.
+	 */
 	public function error_message($msgcode)
 	{
 		switch ($msgcode) {
