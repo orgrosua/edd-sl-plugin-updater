@@ -53,13 +53,20 @@ class PluginUpdater
 	 */
 	public function plugin_update(): void
 	{
-		if ($this->is_activated()) {
-			$doing_cron = defined('DOING_CRON') && DOING_CRON;
-			if (!(current_user_can('manage_options') && $doing_cron)) {
-				if (!$this->edd_sl) {
-					$this->edd_sl = new EDD_SL_Plugin_Updater($this->payload['store_url'], $this->payload['plugin_file'], $this->payload);
-				}
-			}
+		if (defined('DOING_CRON') && DOING_CRON) {
+			return;
+		}
+
+		if (!$this->is_activated()) {
+			return;
+		}
+
+		if (!current_user_can('manage_options')) {
+			return;
+		}
+
+		if (!$this->edd_sl) {
+			$this->edd_sl = new EDD_SL_Plugin_Updater($this->payload['store_url'], $this->payload['plugin_file'], $this->payload);
 		}
 	}
 
