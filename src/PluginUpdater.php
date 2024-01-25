@@ -141,7 +141,7 @@ class PluginUpdater
 	 */
 	public function deactivate()
 	{
-		delete_transient("{$this->plugin_id}_license_seed");
+		$this->drop_license_cache();
 
 		return $this->api_request('deactivate_license');
 	}
@@ -158,7 +158,7 @@ class PluginUpdater
 			$this->payload['license'] = $license;
 		}
 
-		delete_transient("{$this->plugin_id}_license_seed");
+		$this->drop_license_cache();
 
 		return $this->api_request('activate_license');
 	}
@@ -168,8 +168,23 @@ class PluginUpdater
 	 */
 	public function clear_cache(): void
 	{
-		delete_transient("{$this->plugin_id}_license_seed");
+		$this->drop_license_cache();
+		$this->drop_update_cache();
+	}
 
+	/**
+	 * Clear the license cache.
+	 */
+	public function drop_license_cache(): void
+	{
+		delete_transient("{$this->plugin_id}_license_seed");
+	}
+
+	/**
+	 * Clear the plugin update cache.
+	 */
+	public function drop_update_cache(): void
+	{
 		$edd_sl_cache_key = 'edd_sl_' . md5(serialize(basename($this->payload['plugin_file'], '.php') . $this->payload['license'] . $this->payload['beta']));
 		delete_option($edd_sl_cache_key);
 
