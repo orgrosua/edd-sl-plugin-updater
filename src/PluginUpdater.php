@@ -209,7 +209,7 @@ class PluginUpdater
 				'version'     => $this->payload['version'] ?? false,
 				'slug'        => basename($this->payload['plugin_file'], '.php'),
 				'author'      => $this->payload['author'],
-				'url'         => site_url(),
+				'url'         => home_url(), // EDD_SL uses home_url() instead of site_url() for the URL.
 				'beta'        => $this->payload['beta'] ?? false,
 				'environment' => function_exists('wp_get_environment_type') ? wp_get_environment_type() : 'production',
 			]
